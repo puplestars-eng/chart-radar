@@ -1,3 +1,4 @@
+import os
 import FinanceDataReader as fdr
 import pandas as pd
 import requests
@@ -8,8 +9,8 @@ from sklearn.model_selection import train_test_split
 # ==========================================
 # 👇 [설정] 텔레그램 정보 입력
 # ==========================================
-BOT_TOKEN = "8543838124:AAGE6vjqiFAmFeglh2nlGYCEFZiSfhiWLD4"
-CHAT_ID = "8546696621"
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+CHAT_ID = os.environ.get('CHAT_ID')
 # ==========================================
 
 # --- [전략 설정] ---

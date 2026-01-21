@@ -29,6 +29,9 @@ jobs:
 
     - name: 주식 분석 실행 (여기가 핵심!)
       # 🚨 중요: 엑셀 만드는 파일명이 radar.py가 맞나요? 아니면 수정해주세요!
+      env:  # 👈 여기부터 추가! (들여쓰기 주의)
+        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        CHAT_ID: ${{ secrets.CHAT_ID }}
       run: |
         python radar.py
 
