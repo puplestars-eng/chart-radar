@@ -25,7 +25,8 @@ jobs:
 
     - name: 라이브러리 설치
       run: |
-        pip install -r requirements.txt
+        pip install finance-datareader pandas requests openpyxl scikit-learn beautifulsoup4 plotly yfinance streamlit lxml
+        
 
     - name: 주식 분석 실행 (여기가 핵심!)
       # 🚨 중요: 엑셀 만드는 파일명이 radar.py가 맞나요? 아니면 수정해주세요!
