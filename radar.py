@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 
 # ==========================================
 # 👇 [설정] 텔레그램 정보 입력
+# 1 test
 # ==========================================
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
