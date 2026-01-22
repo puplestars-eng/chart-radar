@@ -75,7 +75,7 @@ def get_news_score(code):
         return 0
 
 # -----------------------------------------------------------
-# 4. 종목 분석 엔진 (기술적 분석)
+# 4. 종목 분석 엔진
 # -----------------------------------------------------------
 def analyze_stock(code, name):
     try:
@@ -103,7 +103,7 @@ def analyze_stock(code, name):
         elif cur_rsi > 70: tech_score -= 20
         
         if last_close > last_ma20: tech_score += 20
-        if disparity < 98: tech_score += 10 # 눌림목
+        if disparity < 98: tech_score += 10 
         
         # 뉴스 점수 추가
         news_score = get_news_score(code)
@@ -122,25 +122,30 @@ def analyze_stock(code, name):
         return None
 
 # -----------------------------------------------------------
-# 메인 실행 (수정본: 순위제 도입)
+# 메인 실행
 # -----------------------------------------------------------
 if __name__ == "__main__":
-    print("🚀 차트 레이더 V14 (Full Version) 가동...")
+    print("🚀 차트 레이더 V14.5 (Extended) 가동...")
     us_score, us_msg = get_us_market_sentiment()
     
     results = []
     
-    # 분석 대상 1: 코스피 시총 상위 50개
+    # 1. 코스피 시총 상위 50개
     kospi = fdr.StockListing('KOSPI')
     top50 = kospi.head(50)[['Code', 'Name']].values.tolist()
     
-    # 분석 대상 2: 주요 ETF
+    # 2. ETF 10선 (확장판!)
     etfs = [
-        ['360750', 'TIGER 미국S&P500'],
-        ['305540', 'TIGER 2차전지테마'],
-        ['371460', 'TIGER 차이나전기차SOLACTIVE'],
-        ['091160', 'KODEX 반도체'],
-        ['133690', 'TIGER 미국나스닥100']
+        ['360750', 'TIGER 미국S&P500'],        # 미국 대표
+        ['133690', 'TIGER 미국나스닥100'],       # 미국 기술
+        ['305540', 'TIGER 2차전지테마'],         # 배터리
+        ['091160', 'KODEX 반도체'],             # 반도체
+        ['371460', 'TIGER 차이나전기차SOLACTIVE'], # 중국 전기차
+        ['069500', 'KODEX 200'],               # 한국 시장 대표
+        ['292150', 'TIGER TOP10'],             # 한국 우량주 10개
+        ['132030', 'KODEX 골드선물(H)'],        # 금 (안전 자산)
+        ['143850', 'TIGER 헬스케어'],           # 바이오
+        ['091170', 'KODEX 은행']                # 금융/배당
     ]
     
     target_list = top50 + etfs 
@@ -150,28 +155,34 @@ if __name__ == "__main__":
     for code, name in target_list:
         res = analyze_stock(code, name)
         if res:
-            res['final_score'] += us_score # 글로벌 점수 반영
+            res['final_score'] += us_score 
             res['us_impact'] = us_score
-            results.append(res) # 일단 다 수집! (필터링 X)
+            results.append(res)
     
-    # 점수 높은 순서대로 정렬해서 상위 30개만 남김
+    # 상위 30개 + ETF는 점수 낮아도 무조건 포함시키는 로직으로 변경
     if results:
-        results.sort(key=lambda x: x['final_score'], reverse=True)
-        final_results = results[:30] # Top 30 선정
+        # ETF만 따로 빼서 무조건 살리기
+        etf_results = [r for r in results if 'TIGER' in r['name'] or 'KODEX' in r['name']]
+        stock_results = [r for r in results if r not in etf_results]
+        
+        # 주식은 점수순 정렬해서 상위 25개만
+        stock_results.sort(key=lambda x: x['final_score'], reverse=True)
+        final_results = stock_results[:25] + etf_results # 합체!
         
         df = pd.DataFrame(final_results)
         df.to_excel('latest_analysis.xlsx', index=False)
-        print(f"✅ 분석 완료! 상위 {len(final_results)}개 종목 저장됨.")
+        print(f"✅ 분석 완료! 총 {len(final_results)}개 저장.")
         
         # 텔레그램 보고
-        msg = f"🚀 [차트 레이더 V14] 글로벌 마켓 리포트\n\n{us_msg}\n\n"
-        top3 = df.head(3)
-        for _, row in top3.iterrows():
-            msg += f"⭐ {row['name']} : {row['final_score']}점\n(현재가: {row['price']:,}원 / RSI: {row['rsi']})\n\n"
+        msg = f"🚀 [차트 레이더 V14.5] ETF 확장판\n\n{us_msg}\n\n"
+        # ETF 1등 보여주기
+        if etf_results:
+            best_etf = max(etf_results, key=lambda x:x['final_score'])
+            msg += f"🐢 추천 ETF: {best_etf['name']} ({best_etf['final_score']}점)\n"
+            
         send_telegram_message(msg)
         
     else:
-        # 진짜로 데이터가 하나도 없을 때 (거의 없음)
         df = pd.DataFrame({'name': ['데이터없음'], 'final_score': [0], 'price': [0], 'rsi': [0]})
         df.to_excel('latest_analysis.xlsx', index=False)
-        send_telegram_message("❌ 데이터 수집 실패 (분석된 종목 없음)")
+        send_telegram_message("❌ 데이터 수집 실패")
