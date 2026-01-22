@@ -39,7 +39,7 @@ jobs:
     - name: 결과 저장 및 퇴근 (Commit & Push)
       run: |
         git config --global user.name "GitHub Action Bot"
-        git config --global user.email "actions@github.com"
-        git add *.xlsx
-        git commit -m "🤖 로봇이 데이터 업데이트 완료!" || echo "변경 사항 없음"
+        git config --global user.email "action@github.com"
+        git add latest_analysis.xlsx
+        git commit -m "V14 글로벌 리포트 발행" || echo "변경사항 없음"
         git push
