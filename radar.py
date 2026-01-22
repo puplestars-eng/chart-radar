@@ -82,41 +82,45 @@ def analyze_stock(code, name):
         df = fdr.DataReader(code, '2025-01-01')
         if len(df) < 60: return None
             
-        # RSI
+        # 1. 기술적 지표 계산 (정밀화)
+        # RSI (0~100)
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
-        
-        # 이격도 & 이평선
-        ma20 = df['Close'].rolling(window=20).mean()
-        last_close = df['Close'].iloc[-1]
-        last_ma20 = ma20.iloc[-1]
-        disparity = (last_close / last_ma20) * 100
-        
         cur_rsi = rsi.iloc[-1]
         
-        # 기술적 점수 계산
-        tech_score = 0
-        if cur_rsi < 40: tech_score += 30
-        elif cur_rsi > 70: tech_score -= 20
+        # 이격도 (80~120)
+        ma20 = df['Close'].rolling(window=20).mean()
+        last_close = df['Close'].iloc[-1]
+        disparity = (last_close / ma20.iloc[-1]) * 100
         
-        if last_close > last_ma20: tech_score += 20
-        if disparity < 98: tech_score += 10 
+        # 2. 점수 산출 (신뢰도 업그레이드)
+        # RSI 점수: 30에 가까울수록 높은 점수 (최대 40점)
+        rsi_base_score = max(0, (70 - cur_rsi) * 0.8) 
         
-        # 뉴스 점수 추가
+        # 이격도 점수: 100보다 낮을수록(저평가) 가산점 (최대 30점)
+        disp_score = max(0, (105 - disparity) * 2)
+        
+        # 뉴스 점수 (0~20점)
         news_score = get_news_score(code)
         
+        # 3. 최종 합산 (소수점 유지)
+        final_score = round(rsi_base_score + disp_score + news_score, 1)
+        
+        # 미국 시장 보정 전 최대 100점이 넘지 않게 조절
+        final_score = min(final_score, 90) 
+
         return {
             'code': code,
             'name': name,
             'price': int(last_close),
             'rsi': round(cur_rsi, 1),
             'disparity': round(disparity, 1),
-            'tech_score': tech_score,
+            'tech_score': round(rsi_base_score + disp_score, 1),
             'news_score': news_score,
-            'final_score': tech_score + news_score
+            'final_score': final_score
         }
     except:
         return None
