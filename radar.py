@@ -8,58 +8,49 @@ import time
 import os
 
 # -----------------------------------------------------------
-# 텔레그램 전송 기능 (부활!)
+# 1. 텔레그램 전송
 # -----------------------------------------------------------
 def send_telegram_message(message):
     try:
         token = os.environ.get('BOT_TOKEN')
         chat_id = os.environ.get('CHAT_ID')
-        
-        if not token or not chat_id:
-            print("❌ 텔레그램 토큰이 없습니다. 메시지를 못 보냅니다.")
-            return
-
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        data = {'chat_id': chat_id, 'text': message}
-        requests.post(url, data=data)
-        print("✅ 텔레그램 전송 완료")
-    except Exception as e:
-        print(f"텔레그램 전송 실패: {e}")
+        if token and chat_id:
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            data = {'chat_id': chat_id, 'text': message}
+            requests.post(url, data=data)
+    except:
+        pass
 
 # -----------------------------------------------------------
-# [V14 기능] 미국 시장 분위기 파악
+# 2. 미국 시장 분위기 (V14 핵심)
 # -----------------------------------------------------------
 def get_us_market_sentiment():
     try:
         tickers = ['^GSPC', '^IXIC', '^SOX'] 
         data = yf.download(tickers, period='5d', progress=False)['Close']
-        
-        market_score = 0
-        status_msg = "미국 시장: 보합세 (영향 없음)"
-        
-        # 데이터가 없거나 에러날 경우 방어
-        if len(data) < 2:
-            return 0, "미국 데이터 부족 (보합 가정)"
+        if len(data) < 2: return 0, "미국 데이터 부족"
 
         pct_change = data.pct_change().iloc[-1].mean() * 100
         
+        market_score = 0
+        msg = "미국 시장: 보합세 (-)"
+        
         if pct_change < -1.5:
             market_score = -20
-            status_msg = f"🚨 미국 폭락 ({pct_change:.2f}%) -> 점수 차감!"
+            msg = f"🚨 미국 폭락 ({pct_change:.2f}%) -> 점수 차감!"
         elif pct_change < -0.5:
             market_score = -10
-            status_msg = f"📉 미국 하락 ({pct_change:.2f}%) -> 보수적 접근"
+            msg = f"📉 미국 하락 ({pct_change:.2f}%) -> 보수적 접근"
         elif pct_change > 1.0:
             market_score = +10
-            status_msg = f"🔥 미국 불장 ({pct_change:.2f}%) -> 적극 매수"
+            msg = f"🔥 미국 불장 ({pct_change:.2f}%) -> 적극 매수"
             
-        return market_score, status_msg
-    except Exception as e:
-        print(f"미국 지수 조회 실패: {e}")
-        return 0, "미국 시장 조회 실패 (보합 가정)"
+        return market_score, msg
+    except:
+        return 0, "미국 지수 조회 실패"
 
 # -----------------------------------------------------------
-# [V14 기능] 뉴스 크롤링 & 광고 필터
+# 3. 뉴스 점수 (광고 필터링)
 # -----------------------------------------------------------
 def get_news_score(code):
     try:
@@ -69,103 +60,118 @@ def get_news_score(code):
         soup = BeautifulSoup(response.text, 'html.parser')
         
         titles = soup.select('.title')
-        news_score = 0
+        score = 0
         
-        blacklist = ['특징주', '관련주', '무료', '카톡', '단독', '속보']
-        whitelist = ['수주', '계약', '체결', '공급', '실적', '배당']
+        bad_words = ['특징주', '관련주', '무료', '카톡', '단독', '속보']
+        good_words = ['수주', '계약', '체결', '공급', '실적', '배당', '자사주']
 
         for title in titles[:5]: 
             text = title.get_text().strip()
-            is_spam = False
-            for bad in blacklist:
-                if bad in text: is_spam = True
-            if is_spam: continue
-            
-            for good in whitelist:
-                if good in text: news_score += 5
+            if any(bad in text for bad in bad_words): continue
+            if any(good in text for good in good_words): score += 5
         
-        return min(news_score, 20)
+        return min(score, 20)
     except:
         return 0
 
 # -----------------------------------------------------------
-# 메인 분석 로직
+# 4. 종목 분석 엔진 (기술적 분석)
 # -----------------------------------------------------------
-def analyze_stock(code):
+def analyze_stock(code, name):
     try:
         df = fdr.DataReader(code, '2025-01-01')
         if len(df) < 60: return None
             
-        # 보조지표
-        df['MA20'] = df['Close'].rolling(window=20).mean()
+        # RSI
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         
-        last_row = df.iloc[-1]
-        cur_rsi = last_row[rsi.name] if hasattr(rsi, 'name') else rsi.iloc[-1]
+        # 이격도 & 이평선
+        ma20 = df['Close'].rolling(window=20).mean()
+        last_close = df['Close'].iloc[-1]
+        last_ma20 = ma20.iloc[-1]
+        disparity = (last_close / last_ma20) * 100
         
+        cur_rsi = rsi.iloc[-1]
+        
+        # 기술적 점수 계산
         tech_score = 0
         if cur_rsi < 40: tech_score += 30
         elif cur_rsi > 70: tech_score -= 20
-        if last_row['Close'] > last_row['MA20']: tech_score += 20
         
+        if last_close > last_ma20: tech_score += 20
+        if disparity < 98: tech_score += 10 # 눌림목
+        
+        # 뉴스 점수 추가
         news_score = get_news_score(code)
-        final_score = tech_score + news_score
         
         return {
             'code': code,
-            'price': int(last_row['Close']),
+            'name': name,
+            'price': int(last_close),
             'rsi': round(cur_rsi, 1),
-            'score': final_score,
-            'news_score': news_score
+            'disparity': round(disparity, 1),
+            'tech_score': tech_score,
+            'news_score': news_score,
+            'final_score': tech_score + news_score
         }
     except:
         return None
 
 # -----------------------------------------------------------
-# 실행 및 보고 (수정본)
+# 메인 실행
 # -----------------------------------------------------------
 if __name__ == "__main__":
-    print("🚀 차트 레이더 V14 가동 시작...")
+    print("🚀 차트 레이더 V14 (Full Version) 가동...")
     us_score, us_msg = get_us_market_sentiment()
-    print(us_msg)
     
-    # 분석 대상 종목 (테스트를 위해 몇 개 더 추가했습니다)
-    codes = [
-        '005930', '000660', '035420', '035720', '005380', 
-        '000270', '051910', '006400', '005490', '036570',
-        '003490', '032640', '086520', '011200', '010130' 
-    ]
     results = []
     
-    for code in codes:
-        res = analyze_stock(code)
-        if res:
-            res['score'] += us_score # 글로벌 점수 반영
-            # 기준 점수를 40점으로 낮춤 (테스트용)
-            if res['score'] >= 40: 
-                results.append(res)
+    # 분석 대상 1: 코스피 시총 상위 50개 (대장주)
+    kospi = fdr.StockListing('KOSPI')
+    top50 = kospi.head(50)[['Code', 'Name']].values.tolist()
+    
+    # 분석 대상 2: 주요 ETF (2차전지, 반도체, 미국지수)
+    etfs = [
+        ['360750', 'TIGER 미국S&P500'],
+        ['305540', 'TIGER 2차전지테마'],
+        ['371460', 'TIGER 차이나전기차SOLACTIVE'],
+        ['091160', 'KODEX 반도체'],
+        ['133690', 'TIGER 미국나스닥100']
+    ]
+    
+    target_list = top50 + etfs # 합체!
 
-    # 1. 엑셀 저장 (핵심 수정: 종목 없어도 무조건 파일 생성!)
+    for code, name in target_list:
+        res = analyze_stock(code, name)
+        if res:
+            res['final_score'] += us_score # 글로벌 점수 반영
+            res['us_impact'] = us_score
+            
+            # 조건: 점수 50점 이상인 녀석들만
+            if res['final_score'] >= 50:
+                results.append(res)
+    
+    # 결과 저장
     if results:
         df = pd.DataFrame(results)
     else:
-        # 빈 파일이라도 만들어야 에러가 안 납니다
-        df = pd.DataFrame({'code': ['-'], 'score': [0], 'msg': ['조건에 맞는 종목 없음']})
+        df = pd.DataFrame({'name': ['없음'], 'final_score': [0], 'price': [0]})
         
     df.to_excel('latest_analysis.xlsx', index=False)
-    print("✅ 보고서 파일 생성 완료!")
     
-    # 2. 텔레그램 전송
-    message = f"🚀 [차트 레이더 V14] 글로벌 마켓 리포트\n\n{us_msg}\n\n"
+    # 텔레그램 보고
+    msg = f"🚀 [차트 레이더 V14] 통합 리포트\n\n{us_msg}\n\n"
     if results:
-        top_stocks = sorted(results, key=lambda x: x['score'], reverse=True)[:3]
-        for s in top_stocks:
-            message += f"⭐ {s['code']} : {s['score']}점 (뉴스:{s['news_score']})\n"
+        df = df.sort_values(by='final_score', ascending=False)
+        top3 = df.head(3)
+        for _, row in top3.iterrows():
+            msg += f"⭐ {row['name']} : {row['final_score']}점\n(현재가: {row['price']:,}원 / RSI: {row['rsi']})\n\n"
+        msg += f"🔥 총 {len(results)}개 유망 종목 발굴!"
     else:
-        message += "💨 조건에 맞는 종목이 없습니다. (시장 관망 추천)"
+        msg += "💨 푹 쉬세요. 살만한 게 없습니다."
         
-    send_telegram_message(message)
+    send_telegram_message(msg)
