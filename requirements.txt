@@ -1,9 +1,0 @@
-finance-datareader
-pandas
-openpyxl
-scikit-learn
-requests
-beautifulsoup4
-plotly
-yfinance
-streamlit
