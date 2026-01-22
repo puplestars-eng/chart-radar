@@ -122,7 +122,7 @@ def analyze_stock(code, name):
         return None
 
 # -----------------------------------------------------------
-# 메인 실행
+# 메인 실행 (수정본: 순위제 도입)
 # -----------------------------------------------------------
 if __name__ == "__main__":
     print("🚀 차트 레이더 V14 (Full Version) 가동...")
@@ -130,11 +130,11 @@ if __name__ == "__main__":
     
     results = []
     
-    # 분석 대상 1: 코스피 시총 상위 50개 (대장주)
+    # 분석 대상 1: 코스피 시총 상위 50개
     kospi = fdr.StockListing('KOSPI')
     top50 = kospi.head(50)[['Code', 'Name']].values.tolist()
     
-    # 분석 대상 2: 주요 ETF (2차전지, 반도체, 미국지수)
+    # 분석 대상 2: 주요 ETF
     etfs = [
         ['360750', 'TIGER 미국S&P500'],
         ['305540', 'TIGER 2차전지테마'],
@@ -143,35 +143,35 @@ if __name__ == "__main__":
         ['133690', 'TIGER 미국나스닥100']
     ]
     
-    target_list = top50 + etfs # 합체!
+    target_list = top50 + etfs 
+
+    print(f"총 {len(target_list)}개 종목 분석 시작...")
 
     for code, name in target_list:
         res = analyze_stock(code, name)
         if res:
             res['final_score'] += us_score # 글로벌 점수 반영
             res['us_impact'] = us_score
-            
-            # 조건: 점수 50점 이상인 녀석들만
-            if res['final_score'] >= 50:
-                results.append(res)
+            results.append(res) # 일단 다 수집! (필터링 X)
     
-    # 결과 저장
+    # 점수 높은 순서대로 정렬해서 상위 30개만 남김
     if results:
-        df = pd.DataFrame(results)
-    else:
-        df = pd.DataFrame({'name': ['없음'], 'final_score': [0], 'price': [0]})
+        results.sort(key=lambda x: x['final_score'], reverse=True)
+        final_results = results[:30] # Top 30 선정
         
-    df.to_excel('latest_analysis.xlsx', index=False)
-    
-    # 텔레그램 보고
-    msg = f"🚀 [차트 레이더 V14] 통합 리포트\n\n{us_msg}\n\n"
-    if results:
-        df = df.sort_values(by='final_score', ascending=False)
+        df = pd.DataFrame(final_results)
+        df.to_excel('latest_analysis.xlsx', index=False)
+        print(f"✅ 분석 완료! 상위 {len(final_results)}개 종목 저장됨.")
+        
+        # 텔레그램 보고
+        msg = f"🚀 [차트 레이더 V14] 글로벌 마켓 리포트\n\n{us_msg}\n\n"
         top3 = df.head(3)
         for _, row in top3.iterrows():
             msg += f"⭐ {row['name']} : {row['final_score']}점\n(현재가: {row['price']:,}원 / RSI: {row['rsi']})\n\n"
-        msg += f"🔥 총 {len(results)}개 유망 종목 발굴!"
-    else:
-        msg += "💨 푹 쉬세요. 살만한 게 없습니다."
+        send_telegram_message(msg)
         
-    send_telegram_message(msg)
+    else:
+        # 진짜로 데이터가 하나도 없을 때 (거의 없음)
+        df = pd.DataFrame({'name': ['데이터없음'], 'final_score': [0], 'price': [0], 'rsi': [0]})
+        df.to_excel('latest_analysis.xlsx', index=False)
+        send_telegram_message("❌ 데이터 수집 실패 (분석된 종목 없음)")
